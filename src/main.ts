@@ -1,19 +1,19 @@
 import {randomUUID} from "node:crypto";
 import {appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile} from "node:fs/promises";
 import path from "node:path";
-import {writeJsonAtomic} from "../../../src/shared/atomic.ts";
-import type {PluginContext} from "../../../src/host/plugin-manager.ts";
-import type {TaskRunHandle} from "../../../src/protocol/task-service.ts";
+import {writeJsonAtomic} from "./atomic.ts";
+import type {ExtensionContext, ExtensionTaskRunHandle} from "../sdk/index.ts";
 import {editableJobSchema, jobSchema, runRecordSchema, type EditableJob, type RunRecord, type SchedulerJob} from "./schemas.ts";
 import {nextRun, preview, systemTimezone, validateCron, validateTimezone} from "./cron.ts";
 
 type Schedule = {timer: NodeJS.Timeout; nextAt: Date};
-type ActiveRun = {record: RunRecord; handle: TaskRunHandle};
+type ActiveRun = {record: RunRecord; handle: ExtensionTaskRunHandle};
 
-class SchedulerPlugin {
-  readonly #context: PluginContext;
+export class SchedulerPlugin {
+  readonly #context: ExtensionContext;
   readonly #jobsFile: string;
   readonly #historyFile: string;
+  readonly #migrationsFile: string;
   readonly #jobs = new Map<string, SchedulerJob>();
   readonly #schedules = new Map<string, Schedule>();
   readonly #active = new Map<string, ActiveRun>();
@@ -23,10 +23,11 @@ class SchedulerPlugin {
   #resumeHandler = () => void this.#reconcileAfterResume();
   #resumeDisposable?: {dispose: () => unknown | Promise<unknown>};
 
-  constructor(context: PluginContext) {
+  constructor(context: ExtensionContext) {
     this.#context = context;
     this.#jobsFile = path.join(context.dataDir, "jobs.json");
     this.#historyFile = path.join(context.dataDir, "history.jsonl");
+    this.#migrationsFile = path.join(context.dataDir, "migrations.json");
   }
 
   async initialize(): Promise<void> {
@@ -35,6 +36,7 @@ class SchedulerPlugin {
     for (const job of this.#jobs.values()) this.#arm(job);
     this.#resumeDisposable = this.#context.lifecycle.onResume(this.#resumeHandler);
     this.#registerIpc();
+    void this.#backfillVisibleSessions();
     await this.#context.logger.info("Scheduler initialized", {jobCount: this.#jobs.size});
   }
 
@@ -192,12 +194,13 @@ class SchedulerPlugin {
 
     const record: RunRecord = {
       id: randomUUID(), jobId: job.id, jobName: job.name, source,
-      scheduledAt: scheduledAt.toISOString(), startedAt: new Date().toISOString(), status: "running",
+      scheduledAt: scheduledAt.toISOString(), startedAt: new Date().toISOString(), status: "running", workspacePath: job.workspacePath,
     };
     try {
       const handle = await this.#context.zcode.tasks.run({
         workspacePath: job.workspacePath,
         prompt: job.prompt,
+        title: `⏰ ${job.name}`,
         mode: job.mode,
         ...(job.model ? {model: job.model} : {}),
         ...(job.thoughtLevel ? {thoughtLevel: job.thoughtLevel} : {}),
@@ -239,7 +242,7 @@ class SchedulerPlugin {
   async #recordTerminal(job: SchedulerJob, scheduledAt: Date, source: RunRecord["source"], status: RunRecord["status"], error?: string) {
     await this.#appendHistory(runRecordSchema.parse({
       id: randomUUID(), jobId: job.id, jobName: job.name, source,
-      scheduledAt: scheduledAt.toISOString(), finishedAt: new Date().toISOString(), status,
+      scheduledAt: scheduledAt.toISOString(), finishedAt: new Date().toISOString(), status, workspacePath: job.workspacePath,
       ...(error ? {error} : {}),
     }));
     this.#changed();
@@ -284,6 +287,50 @@ class SchedulerPlugin {
     await writeJsonAtomic(this.#jobsFile, {schemaVersion: 1, jobs: [...this.#jobs.values()]});
   }
 
+  async #backfillVisibleSessions(): Promise<void> {
+    try {
+      const migrations = await this.#readMigrations();
+      if (migrations.sidebarTasksV1) return;
+      const seen = new Set<string>();
+      let restored = 0;
+      let skipped = 0;
+      for (const record of this.#history) {
+        if (!record.sessionId || seen.has(record.sessionId)) continue;
+        seen.add(record.sessionId);
+        const workspacePath = record.workspacePath ?? this.#jobs.get(record.jobId)?.workspacePath;
+        if (!workspacePath) {
+          skipped += 1;
+          await this.#context.logger.warn("Skipped scheduled task sidebar backfill without a workspace", {sessionId: record.sessionId, jobId: record.jobId});
+          continue;
+        }
+        await this.#context.zcode.tasks.ensureVisible({
+          sessionId: record.sessionId,
+          workspacePath,
+          title: `⏰ ${record.jobName}`,
+        });
+        restored += 1;
+      }
+      await writeJsonAtomic(this.#migrationsFile, {
+        ...migrations,
+        schemaVersion: 1,
+        sidebarTasksV1: {completedAt: new Date().toISOString(), restored, skipped},
+      });
+      await this.#context.logger.info("Scheduled task sidebar backfill completed", {restored, skipped});
+    } catch (error) {
+      await this.#context.logger.warn("Scheduled task sidebar backfill will retry on the next launch", {error});
+    }
+  }
+
+  async #readMigrations(): Promise<{schemaVersion?: number; sidebarTasksV1?: unknown}> {
+    try {
+      const value = JSON.parse(await readFile(this.#migrationsFile, "utf8"));
+      return value && typeof value === "object" ? value : {};
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return {};
+    }
+  }
+
   #activeForJob(jobId: string): ActiveRun[] {
     return [...this.#active.values()].filter(({record}) => record.jobId === jobId);
   }
@@ -312,7 +359,7 @@ class SchedulerPlugin {
 
 let scheduler: SchedulerPlugin | undefined;
 
-export async function activate(context: PluginContext) {
+export async function activate(context: ExtensionContext) {
   scheduler = new SchedulerPlugin(context);
   await scheduler.initialize();
   return {dispose: () => scheduler?.dispose()};
