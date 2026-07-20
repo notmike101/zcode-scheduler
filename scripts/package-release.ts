@@ -3,7 +3,7 @@ import {createReadStream} from "node:fs";
 import {copyFile, mkdir, mkdtemp, readFile, rm, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import {assertReleaseVersion, releaseBaseName} from "./release-helpers.ts";
+import {assertReleaseVersion, releaseBaseName, resolveReleaseTag} from "./release-helpers.ts";
 
 const root = path.resolve(import.meta.dir, "..");
 const args = process.argv.slice(2);
@@ -17,7 +17,12 @@ const pluginManifest = await readJson(path.join(root, ".zdp", "plugin.json")) as
 
 if (typeof packageJson.version !== "string") throw new Error("package.json has no version");
 if (typeof pluginManifest.version !== "string") throw new Error(".zdp/plugin.json has no version");
-const tag = valueAfter("--tag") ?? process.env.GITHUB_REF_NAME ?? `v${packageJson.version}`;
+const tag = resolveReleaseTag(
+  valueAfter("--tag"),
+  process.env.GITHUB_REF_TYPE,
+  process.env.GITHUB_REF_NAME,
+  packageJson.version,
+);
 const version = assertReleaseVersion(tag, packageJson.version, pluginManifest.version);
 assertManifest(pluginManifest);
 

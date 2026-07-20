@@ -1,3 +1,12 @@
+export function resolveReleaseTag(
+  explicitTag: string | undefined,
+  refType: string | undefined,
+  refName: string | undefined,
+  version: string,
+): string {
+  return explicitTag ?? (refType === "tag" ? refName : undefined) ?? `v${version}`;
+}
+
 export function assertReleaseVersion(tag: string, packageVersion: string, manifestVersion: string): string {
   const match = /^v(\d+\.\d+\.\d+)$/.exec(tag);
   if (!match) throw new Error(`Release tag ${tag} must use strict vX.Y.Z syntax`);
