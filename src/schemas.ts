@@ -1,5 +1,10 @@
 import {z} from "zod";
-import {modelRefSchema} from "../../../src/shared/schemas.ts";
+
+const modelRefSchema = z.object({
+  providerId: z.string().min(1),
+  modelId: z.string().min(1),
+  variant: z.string().min(1).optional(),
+}).strict();
 
 export const jobSchema = z.object({
   schemaVersion: z.literal(1),
@@ -60,6 +65,7 @@ export const runRecordSchema = z.object({
   finishedAt: z.string().datetime().optional(),
   status: runStatusSchema,
   sessionId: z.string().optional(),
+  workspacePath: z.string().min(1).optional(),
   error: z.string().optional(),
 }).strict();
 

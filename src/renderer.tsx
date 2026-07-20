@@ -1,6 +1,6 @@
 import {render} from "preact";
 import {useEffect, useMemo, useState} from "preact/hooks";
-import type {ZdpBridge} from "../../../src/renderer/globals.d.ts";
+import type {ExtensionBridge as ZdpBridge} from "../sdk/index.ts";
 import type {RunRecord, SchedulerJob} from "./schemas.ts";
 import styles from "./scheduler.css";
 

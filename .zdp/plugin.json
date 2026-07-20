@@ -2,14 +2,14 @@
   "apiVersion": 1,
   "id": "scheduler",
   "name": "Scheduler",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Create normal ZCode tasks from timezone-aware cron schedules while ZCode is open.",
   "entrypoints": {
     "main": "dist/main.cjs",
     "renderer": "dist/renderer.js"
   },
   "engines": {
-    "host": ">=0.1.0 <1",
+    "host": ">=0.2.0 <1",
     "zcode": ">=3.3.6"
   },
   "pages": [
