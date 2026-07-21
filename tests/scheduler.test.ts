@@ -129,7 +129,7 @@ function createContext(dataDir: string) {
       apiVersion: 1,
       id: "scheduler",
       name: "Scheduler",
-      version: "0.1.4",
+      version: "0.1.5",
       entrypoints: {},
       engines: {host: ">=0.2.0 <1", zcode: ">=3.3.6"},
       pages: [{id: "jobs", title: "Scheduler"}],
