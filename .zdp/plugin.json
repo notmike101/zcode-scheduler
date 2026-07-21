@@ -2,7 +2,7 @@
   "apiVersion": 1,
   "id": "scheduler",
   "name": "Scheduler",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Create normal ZCode tasks from timezone-aware cron schedules while ZCode is open.",
   "entrypoints": {
     "main": "dist/main.cjs",

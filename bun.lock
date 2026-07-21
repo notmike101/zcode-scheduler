@@ -10,6 +10,7 @@
         "zod": "^4.1.12",
       },
       "devDependencies": {
+        "@notmike101/zcode-extension-sdk": "0.3.0",
         "@types/bun": "^1.3.4",
         "@types/node": "^24.10.1",
         "typescript": "^5.9.3",
@@ -17,6 +18,8 @@
     },
   },
   "packages": {
+    "@notmike101/zcode-extension-sdk": ["@notmike101/zcode-extension-sdk@0.3.0", "", {}, "sha512-MBZGF3+UPUQqHmaW8hUmqncG64oujaOawB5gMM0Vwl/4+rPr8pcoCs+fbzYhRXIKWIXZjsUnyE8ZmA6fkyINhQ=="],
+
     "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@types/node": ["@types/node@24.13.3", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q=="],

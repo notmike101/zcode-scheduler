@@ -14,7 +14,7 @@ Scheduled runs are ordinary persistent ZCode tasks. They appear immediately in t
 
 Open **Extensions → Available** in ZCode and install Scheduler. The host verifies the release archive checksum before staging it. New installs and updates take effect on the next ZCode launch.
 
-Manual installation is also supported: download `zcode-scheduler-v0.1.3.zip` from the [latest release](https://github.com/notmike101/zcode-scheduler/releases/latest), extract the `scheduler` folder, and select it from **Extensions → Installed → Install folder**.
+Manual installation is also supported: download `zcode-scheduler-v0.1.4.zip` from the [latest release](https://github.com/notmike101/zcode-scheduler/releases/latest), extract the `scheduler` folder, and select it from **Extensions → Installed → Install folder**.
 
 ## Scheduling behavior
 
@@ -30,7 +30,7 @@ Manual installation is also supported: download `zcode-scheduler-v0.1.3.zip` fro
 ```powershell
 bun install
 bun run check
-bun run release:package -- --tag v0.1.3
+bun run release:package -- --tag v0.1.4
 ```
 
 The release command writes a ZIP, its SHA-256 checksum, and `extension-update.json` to `dist/release`.
