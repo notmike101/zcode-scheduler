@@ -1,6 +1,6 @@
 import {render} from "preact";
 import {useEffect, useMemo, useState} from "preact/hooks";
-import type {ExtensionBridge as ZdpBridge} from "@notmike101/zcode-extension-sdk/renderer";
+import {defineRendererExtension, type RendererExtensionContext} from "@notmike101/zcode-extension-sdk/renderer";
 import type {RunRecord, SchedulerJob} from "./schemas.ts";
 import styles from "./scheduler.css";
 
@@ -46,21 +46,27 @@ const emptyDraft = (timezone = Intl.DateTimeFormat().resolvedOptions().timeZone 
   maxParallel: 4,
 });
 
-window.ZDP_REGISTER_PLUGIN_RENDERER?.({
+export const schedulerRenderer = defineRendererExtension({
   id: "scheduler",
-  mount(container, bridge) {
+  mountPage(pageId, container, context) {
+    if (pageId !== "jobs") return;
     const style = document.createElement("style");
     style.textContent = styles;
     container.replaceChildren(style);
     const mount = document.createElement("div");
     mount.className = "scheduler-root";
     container.append(mount);
-    render(<SchedulerPage bridge={bridge}/>, mount);
-    return () => render(null, mount);
+    render(<SchedulerPage context={context}/>, mount);
+    return () => {
+      render(null, mount);
+      container.replaceChildren();
+    };
   },
 });
 
-function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
+if (typeof window !== "undefined") window.ZDP_REGISTER_PLUGIN_RENDERER?.(schedulerRenderer);
+
+function SchedulerPage({context}: {context: RendererExtensionContext}) {
   const [state, setState] = useState<SchedulerState>();
   const [draft, setDraft] = useState<JobDraft>(emptyDraft());
   const [editing, setEditing] = useState(false);
@@ -69,14 +75,13 @@ function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
-  const invoke = <T,>(method: string, payload?: unknown) => bridge.invoke<T>("plugin:invoke", {pluginId: "scheduler", method, payload});
+  const invoke = <T,>(method: string, payload?: unknown) => context.ipc.invoke<T>(method, payload);
   const refresh = () => invoke<SchedulerState>("get-state").then(setState).catch((cause) => setError(errorText(cause)));
 
   useEffect(() => {
     void refresh();
-    const listener = () => void refresh();
-    window.addEventListener("plugin:scheduler:state-changed", listener);
-    return () => window.removeEventListener("plugin:scheduler:state-changed", listener);
+    const subscription = context.ipc.on("state-changed", () => void refresh());
+    return () => subscription.dispose();
   }, []);
 
   useEffect(() => {
@@ -95,7 +100,12 @@ function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
   };
 
   const save = async () => {
-    if (draft.mode === "yolo" && !window.confirm("Yolo mode permits unattended workspace changes. Save this job with Yolo permissions?")) return;
+    if (draft.mode === "yolo" && !await context.ui.showDialog({
+      title: "Confirm Yolo permissions",
+      message: "Yolo mode permits unattended workspace changes. Save this job with Yolo permissions?",
+      confirmLabel: "Save job",
+      cancelLabel: "Cancel",
+    })) return;
     const model = draft.providerId.trim() && draft.modelId.trim()
       ? {providerId: draft.providerId.trim(), modelId: draft.modelId.trim(), ...(draft.variant.trim() ? {variant: draft.variant.trim()} : {})}
       : undefined;
@@ -145,7 +155,7 @@ function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
       <div class="scheduler-heading-actions"><button class={tab === "jobs" ? "active" : ""} onClick={() => setTab("jobs")}>Jobs</button><button class={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>History</button>
       {tab === "jobs" && <button class="primary" onClick={() => {setDraft(emptyDraft(state?.timezone)); setEditing(true);}}>New job</button>}</div></div>
     {error && <div class="scheduler-error">{error}</div>}
-    {editing && tab === "jobs" && <JobEditor draft={draft} setDraft={setDraft} preview={preview} busy={busy} bridge={bridge} save={save} cancel={() => {setEditing(false); setDraft(emptyDraft(state?.timezone));}}/>}
+    {editing && tab === "jobs" && <JobEditor draft={draft} setDraft={setDraft} preview={preview} busy={busy} context={context} save={save} cancel={() => {setEditing(false); setDraft(emptyDraft(state?.timezone));}}/>}
     {!editing && tab === "jobs" && <div class="scheduler-jobs">
       {state?.jobs.map((job) => <article class="scheduler-job">
         <div class="scheduler-job-top"><div><h3>{job.name}</h3><p><code>{job.cron}</code> · {job.timezone}</p></div><span class={job.enabled ? "enabled" : "disabled"}>{job.enabled ? "Enabled" : "Paused"}</span></div>
@@ -156,9 +166,15 @@ function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
           <button disabled={busy} onClick={() => edit(job)}>Edit</button><button disabled={busy} onClick={() => edit(job, true)}>Duplicate</button>
           <button disabled={busy} onClick={() => void run(() => invoke("set-enabled", {id: job.id, enabled: !job.enabled}))}>{job.enabled ? "Pause" : "Enable"}</button>
           {activeByJob.get(job.id) && <button class="warn" disabled={busy} onClick={() => void run(() => invoke("cancel-run", {id: activeByJob.get(job.id)!.id}))}>Cancel active</button>}
-          <button class="danger" disabled={busy || Boolean(activeByJob.get(job.id))} onClick={() => {
-            if (window.confirm(`Delete scheduled job “${job.name}”?`)) void run(() => invoke("delete-job", {id: job.id}));
-          }}>Delete</button>
+          <button class="danger" disabled={busy || Boolean(activeByJob.get(job.id))} onClick={() => void (async () => {
+            const confirmed = await context.ui.showDialog({
+              title: "Delete scheduled job",
+              message: `Delete scheduled job “${job.name}”?`,
+              confirmLabel: "Delete",
+              cancelLabel: "Cancel",
+            });
+            if (confirmed) await run(() => invoke("delete-job", {id: job.id}));
+          })()}>Delete</button>
         </div>
       </article>)}
       {state && state.jobs.length === 0 && <div class="scheduler-empty">No scheduled jobs yet.</div>}
@@ -167,9 +183,9 @@ function SchedulerPage({bridge}: {bridge: ZdpBridge}) {
   </div>;
 }
 
-function JobEditor({draft, setDraft, preview, busy, bridge, save, cancel}: {
+function JobEditor({draft, setDraft, preview, busy, context, save, cancel}: {
   draft: JobDraft; setDraft: (value: JobDraft) => void; preview?: {nextRuns: string[]; description: string}; busy: boolean;
-  bridge: ZdpBridge; save: () => Promise<void>; cancel: () => void;
+  context: RendererExtensionContext; save: () => Promise<void>; cancel: () => void;
 }) {
   const set = <K extends keyof JobDraft>(key: K, value: JobDraft[K]) => setDraft({...draft, [key]: value});
   return <section class="scheduler-editor"><div class="scheduler-grid">
@@ -177,7 +193,7 @@ function JobEditor({draft, setDraft, preview, busy, bridge, save, cancel}: {
     <label>Cron expression<input value={draft.cron} onInput={(e) => set("cron", e.currentTarget.value)} placeholder="0 9 * * 1-5"/></label>
     <label>Timezone<input value={draft.timezone} onInput={(e) => set("timezone", e.currentTarget.value)} placeholder="America/Chicago"/></label>
     <label>Permission mode<select value={draft.mode} onChange={(e) => set("mode", e.currentTarget.value as JobDraft["mode"])}><option value="plan">Plan</option><option value="build">Build</option><option value="edit">Edit</option><option value="yolo">Yolo</option></select></label>
-    <label class="wide">Workspace<div class="scheduler-input-button"><input value={draft.workspacePath} onInput={(e) => set("workspacePath", e.currentTarget.value)} placeholder="D:\\project"/><button type="button" onClick={async () => {const folder = await bridge.invoke<string | null>("host:chooseDirectory"); if (folder) set("workspacePath", folder);}}>Browse</button></div></label>
+    <label class="wide">Workspace<div class="scheduler-input-button"><input value={draft.workspacePath} onInput={(e) => set("workspacePath", e.currentTarget.value)} placeholder="D:\\project"/><button type="button" onClick={async () => {const folder = await context.ui.chooseDirectory(); if (folder) set("workspacePath", folder);}}>Browse</button></div></label>
     <label class="wide">Prompt<textarea value={draft.prompt} onInput={(e) => set("prompt", e.currentTarget.value)} rows={6} placeholder="Describe the task ZCode should perform…"/></label>
     <label>Overlap<select value={draft.overlapPolicy} onChange={(e) => set("overlapPolicy", e.currentTarget.value as JobDraft["overlapPolicy"])}><option value="skip">Skip</option><option value="queue-one">Queue one</option><option value="parallel">Parallel</option></select></label>
     {draft.overlapPolicy === "parallel" && <label>Max parallel<input type="number" min="1" max="4" value={draft.maxParallel} onInput={(e) => set("maxParallel", Number(e.currentTarget.value))}/></label>}
