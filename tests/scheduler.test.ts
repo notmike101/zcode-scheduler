@@ -2,8 +2,14 @@ import {afterEach, describe, expect, test} from "bun:test";
 import {mkdir, mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import type {ExtensionContext, ExtensionTaskSpec} from "../sdk/index.ts";
+import type {ExtensionContext, ExtensionTaskSpec} from "@notmike101/zcode-extension-sdk/main";
 import {SchedulerPlugin} from "../src/main.ts";
+
+type LegacySchedulerContext = Omit<ExtensionContext, "zcode"> & {
+  zcode: Pick<ExtensionContext["zcode"], "readWorkspaceState"> & {
+    tasks: Pick<ExtensionContext["zcode"]["tasks"], "run" | "ensureVisible">;
+  };
+};
 
 const roots: string[] = [];
 const jobId = "6a1d0f7a-8eef-47aa-8638-3f2629ea1d5d";
@@ -118,12 +124,12 @@ function createContext(dataDir: string) {
     warn: async () => undefined,
     error: async () => undefined,
   };
-  const context: ExtensionContext = {
+  const context: LegacySchedulerContext = {
     manifest: {
       apiVersion: 1,
       id: "scheduler",
       name: "Scheduler",
-      version: "0.1.3",
+      version: "0.1.4",
       entrypoints: {},
       engines: {host: ">=0.2.0 <1", zcode: ">=3.3.6"},
       pages: [{id: "jobs", title: "Scheduler"}],
@@ -146,7 +152,7 @@ function createContext(dataDir: string) {
       },
     },
   };
-  return {context, handlers, runs, visible, finish: resolveCompletion};
+  return {context: context as unknown as ExtensionContext, handlers, runs, visible, finish: resolveCompletion};
 }
 
 async function eventually(predicate: () => boolean | Promise<boolean>): Promise<void> {

@@ -2,7 +2,7 @@ import {randomUUID} from "node:crypto";
 import {appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile} from "node:fs/promises";
 import path from "node:path";
 import {writeJsonAtomic} from "./atomic.ts";
-import type {ExtensionContext, ExtensionTaskRunHandle} from "../sdk/index.ts";
+import type {ExtensionContext, ExtensionTaskRunHandle} from "@notmike101/zcode-extension-sdk/main";
 import {editableJobSchema, jobSchema, runRecordSchema, type EditableJob, type RunRecord, type SchedulerJob} from "./schemas.ts";
 import {nextRun, preview, systemTimezone, validateCron, validateTimezone} from "./cron.ts";
 
