@@ -25,7 +25,7 @@ describe("release metadata", () => {
 
   test("uses explicit capabilities and only the vNext renderer lifecycle", () => {
     const manifest = JSON.parse(readFileSync(path.join(import.meta.dir, "..", ".zdp", "plugin.json"), "utf8"));
-    expect(manifest.engines.host).toBe(">=0.3.4 <1");
+    expect(manifest.engines.host).toBe(">=0.3.5 <1");
     expect(manifest.capabilities).toEqual([
       "zcode.workspaces.read",
       "zcode.tasks.run",
